@@ -229,11 +229,9 @@ for i in range(10):
 
 **Scrapy**是一个为爬取网站数据、提取结构性数据而编写的应用框架，该框架是纯Python实现的，也是目前Python中最受欢迎的爬虫框架之一。
 
-## 框架介绍
-
 ### scrapy框架构成
 
-![image-20231004101810833](C:\Users\65324\AppData\Roaming\Typora\typora-user-images\image-20231004101810833.png)**Scrapy Engine**：是整个框架的引擎，主要负责Spider、ItemPipeline、Downloader、Scheduler各组件之间的通讯，完成信号及数据的传递等。
+<img src="C:\Users\65324\AppData\Roaming\Typora\typora-user-images\image-20231004101810833.png" alt="image-20231004101810833" style="zoom:80%;" />**Scrapy Engine**：是整个框架的引擎，主要负责Spider、ItemPipeline、Downloader、Scheduler各组件之间的通讯，完成信号及数据的传递等。
 
 **Scheduler**：是调度器，它负责接收所有**请求url**，对其进行**去重、排列、入队**。
 
@@ -304,11 +302,97 @@ for i in range(10):
 
 其中的文件**<u>不可以</u>**擅自修改名称，只能按照一定的模范在其中添加你的代码
 
-## 网页分析
+
+
+### 网页分析
+
+> 爬取中国高校2020年度的排行榜：http://www.cnur.com/rankings/188.html
+
+#### 创建项目文件
+
+- 打开终端，进入spiders文件夹，然后输入：`scrapy genspider 文件名 url` 
+  - (e.g. `scrapy genspider first http://www.cnur.com`)
+
+**FirstSpider**类中又三分属性和一个方法，介绍如下：
+
+- **name**是**爬虫名**，后续启动爬虫需要用到
+- **allowed_domains**是爬取的**域名**, **start_urls**是爬取的**初始url**
+  - allowed_domains和start_urls的数据是**列表**，意味着可以添加多个域名或url
+  - <u>自动生成的url可以进行修改</u>
+- **parse**方法是**默认解析方法**
+
+<img src="C:\Users\65324\AppData\Roaming\Typora\typora-user-images\image-20231012090002265.png" alt="image-20231012090002265" style="zoom:67%;" />
 
 
 
+#### 编写代码
 
+接下来要在parse中编写解析响应页面、提取目标数据的代码
+
+```python
+# first.py
+
+import scrapy
+from bs4 import BeautifulSoup
+
+
+class FirstSpider(scrapy.Spider):
+    name = "first"
+    allowed_domains = ["www.cnur.com"]
+    start_urls = ["http://www.cnur.com/rankings/188.html"]
+
+    def parse(self, response):
+
+        # 解析响应，抽取目标数据
+        soup = BeautifulSoup(response.text, "lxml")
+        # 去掉表头的数据
+        tags = soup.find_all("tr", style=";height:30px")[1:]
+        # 打印榜单排名信息
+        for tag in tags:
+            info = list(tag.strings)
+            print("2020年度中国搞笑排名第{}的是{}".format(info[0], info[1]))
+        
+        pass
+```
+
+- 我们使用`find_all`方法，获取所有`tr标签`的列表，然后通过列表切片`[1:]`过滤掉不需要的**表头数据标签**。
+
+- 接着，遍历`tags`列表中的`tr标签`，通过`tag.strings`获取每一个`tr标签`下所有子标签(`td`)的文本内容。
+
+- 需要注意的是`tag.strings`返回的是生成器(`generator`)，你可以理解为返回内容被打包装在一起。
+
+- 解开包装的方法是：`list(tag.strings)`。
+
+#### 添加设置
+
+> 在运行前我们需要在`setting.py`文件中完成一部分设置，否则...爬了个寂寞
+
+1. 找到变量`ROBOTSTXT_OBEY`并将默认值修改为`False`，代表不遵循君子协议。遵照协议大部分有价值的信息我们都爬不到。
+2. 设置默认的请求头，在`DEFAULT_REQUEST_HEADERS`字典中添加`User-Agent`信息，模拟浏览器。
+3. 设置程序日志的输出等级，变量`LOG_LEVEL`的值设置为`'ERROR'`。在进行日志打印时，只打印`ERROR`级别的日志。
+
+#### 运行爬虫
+
+1. 打开终端，输入`scrapy crawl 爬虫名`
+
+> ../../../testPorject/testProject> scrapy crawl first
+
+2. 新建一个文件，添加如下代码，然后Run
+
+```python
+from scrapy import cmdline
+
+if __name__ == '__main__':
+    cmdline.execute(['scrapy', 'crawl', 'first'])
+```
+
+<img src="C:\Users\65324\AppData\Roaming\Typora\typora-user-images\image-20231012095139709.png" alt="image-20231012095139709" style="zoom: 67%;" />
+
+
+
+### 总结
+
+<img src="C:\Users\65324\AppData\Roaming\Typora\typora-user-images\image-20231012095716676.png" alt="image-20231012095716676" style="zoom:67%;" />
 
 
 
@@ -322,7 +406,95 @@ for i in range(10):
 
 我们的目标数据是，拿到每一个招聘职位的详细信息包括**公司名称、职位名称、薪资、工作地址、公司主页链接**。
 
+### scrapy框架使用流程
 
+上一节的案例不涉及数据存储，我们增加这一流程
+
+<img src="C:\Users\65324\Desktop\小象学院\interactive_course\spider\chapter3\3_scrapy_example_files\89280eb57e2d15276d59a3ac11bbb2cb.gif" alt="89280eb57e2d15276d59a3ac11bbb2cb" style="zoom:50%;" />
+
+存储数据的逻辑，我们需要在items.py和pipelines.py文件中编写相应的代码。
+
+#### ItemPipelines组件
+
+##### items.py
+
+<img src="C:\Users\65324\AppData\Roaming\Typora\typora-user-images\image-20231012102212672.png" alt="image-20231012102212672" style="zoom: 67%;" />
+
+```python
+# Define here the models for your scraped items
+#
+# See documentation in:
+# https://docs.scrapy.org/en/latest/topics/items.html
+
+import scrapy
+
+
+class TestprojectItem(scrapy.Item):
+    # define the fields for your item here like:
+    name = scrapy.Field()
+    age = scrapy.Field()
+    score = scrapy.Field()
+    pass
+
+
+t = TestprojectItem()
+
+t['name'] = '小象'
+t['age'] = 39
+t['score'] = 98
+
+print(t)
+print(t['name'])
+print(t['age'])
+print(t['score'])
+```
+
+- 在python中字典、列表、元组等都是存放数据的容器
+- `TestproItem`类创建的对象也是同样的功能，是scrapy框架中存放数据的容器。
+
+**结论**：scrapy.Item的继承类(也就是本例中的`TestprojectItem`)可以创建类似Python字典的容器对象，用于存储爬取的数据。
+
+- `scrapy.Field()`你可以理解为字典的`“Key”`，后期爬取的数据就是`“Value“`。
+
+- 在使用scrapy框架时，一般我们会先确定目标数据，在items.py文件中定义字典的`“Key”`。
+
+我需要提醒你的是，<u>items只是**暂存数据的容器**</u>。
+
+如果你想将数据永久保存，例如文件形式保存到本地(Csv、Execl)或者远程数据库(Mysql)，还需要items的好兄弟pipelines来帮忙。
+
+##### pipline.py
+
+<img src="C:\Users\65324\AppData\Roaming\Typora\typora-user-images\image-20231012102656404.png" alt="image-20231012102656404" style="zoom: 67%;" />
+
+pipeline.py文件中为你提供了代码模板，你的持久化存储数据的代码需要在这个预置的类中自己实现。
+
+
+
+### 代码实现
+
+#### 创建爬虫项目
+
+使用`scrapy startproject 项目名`命令创建项目，你可以顺带在spiders目录下使用`scrapy genspider 文件名 [域名]`命令，新建一个爬虫文件。
+
+#### 定义数据容器
+
+在items.py文件中定义数据容器，明确爬取的目标数据，参考代码如下。
+
+```python
+class TestproItem(scrapy.Item):
+    # define the fields for your item here like:
+    company = scrapy.Field()  # 公司名称
+    job_name = scrapy.Field()  # 职位名称
+    salary = scrapy.Field()  # 薪资
+    address = scrapy.Field()  # 地址
+    company_url = scrapy.Field()  # 公司主页网址
+    
+    pass
+```
+
+#### 编写爬取逻辑
+
+在spider目录下的文件中完成爬取逻辑编写，参考代码如下
 
 
 
