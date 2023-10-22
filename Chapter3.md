@@ -496,9 +496,134 @@ class TestproItem(scrapy.Item):
 
 在spider目录下的文件中完成爬取逻辑编写，参考代码如下
 
+```python
+import scrapy
+import json
+from bs4 import BeautifulSoup
+from testpro.items import TestproItem
+
+class WyJobSpider(scrapy.Spider):
+    # 定义爬虫名
+    name = '51job'
+    allowed_domains = ['search.51job.com', 'jobs.51job.com']
+    header = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36'
+    }
+    
+    def start_requests(self):
+        for pg in range(1,2):
+            url = 'https://search.51job.com/list/010000,000000,0000,00,9,99,python,2,{pg}.html?' \
+                  'lang=c&postchannel=0000&workyear=99&cotype=99&degreefrom=99&jobterm=99' \
+                  '&companysize=99&ord_field=0&dibiaoid=0&line=&welfare='.format(pg=pg)
+            yield scrapy.Request(url=url, headers = self.header, callback=self.parse)
+            
+            
+    # 接收列表页响应，解析出每个职位的职位信息，构建item并返回给引擎
+    def parse(self, response):
+        soup = BeautifulSoup(response.text, 'lxml')
+        # 利用有id属性的div标签，定位与之相邻的script标签，获取标签文本
+        data_text = soup.find('div', {'id': 'app'}).find_next('script', {'type': 'text/javascript'}).string.split('=',1)[1]
+        # 将json格式转换成python的字典类型
+        data_dict = json.loads(data_text)
+        # 获取职位信息列表
+        job_list = data_dict["engine_search_result"]
+        
+        # 遍历职位列表，获取每个职位的信息并生成Item，返回给引擎
+        for job in job_list:
+            company = job['company_name']
+            company_url = job['company_href']
+            job_name = job['job_name']
+            salary = job['providesalary_text']
+            address = job['workarea_text']
+            print(company)
+            print(company_url)
+            print(job_name)
+            print(salary)
+            print(address)
+            print('=' * 100)
+            
+            item = TestproItem()
+            item['company'] = company
+            item['company_url'] = company_url
+            item['job_name'] = job_name
+            item['salary'] = salary
+            item['address'] = address
+            yield item
+```
+
+（不过该代码与现实爬取时候的网页分析不一致，仅了解思路即可，此代码无法运行）
 
 
 
+#### 编写存储逻辑
+
+在pipelines.py文件中编写将爬取的数据持久化保存到本地的代码，以csv文件为列参考代码如下：
+
+```python
+from itemadapter import ItemAdapter
+
+import csv
+
+class TestproPipeline:
+    # 爬虫启动时执行一次的方法
+    def open_spider(self, spider):
+        self.headers = ["company", "job_name", "salary", "address", "company_url"]
+        # 打开csv文件添加表头
+        with open("../../tmp/C_data.csv", "a+") as f:
+            self.f_csv = csv.writer(f)
+            self.f_csv.writerow(self.headers)
+
+    # 默认处理数据的方法
+    def process_item(self, item, spider):
+        # 从Item中取出数据，写入csv文件
+        rows = [item["company"], item["job_name"], item["salary"], item["address"], item["company_url"]]
+        with open("../../tmp/C_data.csv", "a+") as f:
+            self.f_csv = csv.writer(f)
+            self.f_csv.writerow(rows)
+            
+        return item
+```
+
+- 使用`with open`语句打开文件时，要选择追加模式`a+`，能够**避免数据被覆盖**
+
+- `TestproPipeline`类中实现了两个方法`open_spider`和`process_item`。
+  - `open_spider`只在爬虫启动时执行一次，我们利用这个特征，在其中实现添加表头的代码。
+  - `process_item`是默认的存储数据的方法，每次引擎接收爬虫中获取的数据Item，就会调用该方法对Item进行后续的处理，我们在这个方法中实现追加数据的代码。
+
+
+
+#### 修改设置内容
+
+- 在setting.py文件中添加相应的设置
+
+<img src="C:\Users\65324\AppData\Roaming\Typora\typora-user-images\image-20231019180343654.png" alt="image-20231019180343654" style="zoom: 80%;" />
+
+
+
+- 这次涉及到数据存储
+
+<img src="C:\Users\65324\AppData\Roaming\Typora\typora-user-images\image-20231019180430133.png" alt="image-20231019180430133" style="zoom:67%;" />
+
+
+
+#### 运行爬虫项目
+
+1. `scrapy crawl 51job` 命令运行项目
+
+2. 新建`run.py`文件，然后运行
+
+   ```python
+   from scrapy import cmdline
+   
+   if __name__ == '__main__':
+       cmdline.execute(['scrapy', 'crawl', '51job'])
+   ```
+
+
+
+### 总结
+
+<img src="C:\Users\65324\AppData\Roaming\Typora\typora-user-images\image-20231019180936385.png" alt="image-20231019180936385" style="zoom:80%;" />
 
 # Crawl Weibo
 
@@ -541,7 +666,7 @@ for item in comments["data"]["data"]:
 用户： 帅宝妈咪2011
 评论： 大美璇儿<span class="url-icon"><img alt=[爱你] src="https://h5.sinaimg.cn/m/emoticon/icon/default/d_aini-09d5f3f870.png" style="width:1em; height:1em;" /></span>
 
-（但是会发现有除文字之外的内容出现，HTML格式
+（但是会发现有除文字之外的内容出现，HTML格式）
 
 改为如下
 
@@ -554,5 +679,173 @@ print("评论：", soup.text)
 
 ### 登录抓取更多评论
 
+在向下不停滚动的时候，加载出更多的评论页面，会出现账号登录提示。
+
+这时候需要用Selenium来管理这个操作流程。
+
+1. 先单独获取一页内容：
+
+```python
+from selenium import webdriver
+from selenium.webdriver.firefox.options import Options
+import time
+
+browser_options = Options()
+browser = webdriver.Firefox(executable_path="data/geckodriver.exe")
+time.sleep(2)
+
+browser.get("https://m.weibo.cn/detail/4564698990907350")
+time.sleep(5)
+
+# 提取评论用户名和内容
+comment_content = browser.find_element_by_class_name("comment-content")
+user_names = comment_content.find_elements_by_tag_name("h4")
+comments = comment_content.find_elements_by_tag_name("h3")
+
+for i in range(len(comments)):
+    print("======")
+    print("用户：", user_names[i].text)
+    print("评论：", comments[i].text)
+
+browser.quit()
+```
 
 
+
+2. 爬取多页内容（配合人机交互）
+
+```python
+from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import TimeoutException
+import time
+
+# 1. 打开页面
+browser = webdriver.Firefox(executable_path='data/geckodriver.exe')
+time.sleep(2)
+browser.get('https://m.weibo.cn/detail/4564698990907350')
+
+# 2.1 等待验证码页面出现
+while True:
+    try:
+        wait = WebDriverWait(browser, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.CSS_SELECTOR, '.verify-box'))
+        )
+        break
+    except TimeoutException:
+        print('未登录，继续等待。')
+
+# 2.2 等待登录成功
+while True:
+    try:
+        wait = WebDriverWait(browser, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.CLASS_NAME, 'comment-content'))
+        )
+        break
+    except TimeoutException:
+        print('未登录成功，继续等待。')
+
+# 3. 滚动三页，输出评论内容
+for i in range(3):
+    browser.execute_script('window.scrollTo(0, document.body.scrollHeight)')
+    time.sleep(3)
+
+comment_content = browser.find_element_by_class_name('comment-content')
+user_names = comment_content.find_elements_by_tag_name('h4')
+comments = comment_content.find_elements_by_tag_name('h3')
+
+for i in range(len(comments)):
+    print('======')
+    print('用户：', user_names[i].text)
+    print('评论：', comments[i].text)
+
+browser.quit()
+```
+
+- 在2.1和2.2一直等待人工登录操作
+- 使用selenium中的**WebDriverWait**和**expected_conditions**配合实现**让程序等待**的功能
+  - 例子中的`until()`里，使用`expected_conditions.presence_of_element_located((By.CSS_SELECTOR, '.verify-box'))`定义的事件是**登录验证窗口在页面中出现**。
+  - 这里参数中的`By.CSS_SELECTOR`表示我们希望通过CSS选择器定位元素，`'.verify-box'`这个CSS选择器就表示了要定位元素的class是**verify-box**。
+  - 这次等待的事件是`expected_conditions.presence_of_element_located((By.CLASS_NAME, 'comment-content'))`，帖子的评论区重新显示在网页上。如果评论区重新出现，就表示登录操作完成了。
+  - 这里有意使用了跟2.1不太一样的方法作为例子，其实使用CSS选择器也可以达到相同的目的，即：`expected_conditions.presence_of_element_located((By.CSS_SELECTOR, '.comment-content'))`。
+
+
+
+3. 保存到文件
+
+```python
+from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import TimeoutException
+import time
+import openpyxl
+
+browser = webdriver.Firefox(executable_path = "data/geckodriver.exe")
+time.sleep(2)
+browser.get("https://m.weibo.cn/detail/4564698990907350")
+
+# 等到验证码页面出现
+while True:
+    try:
+        wait = WebDriverWait(browser, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.CSS_SELECTOR, ".verify-box"))
+        )
+        break
+    except TimeoutException:
+        print("未登录，继续等待。")
+
+# 等待登录成功
+while True:
+    try:
+        wait = WebDriverWait(browser, 10)
+        wait.until(
+            expected_conditions.presence_of_element_located((By.CLASS_NAME, "comment-content"))
+        )
+        break
+    except TimeoutException:
+        print("未登录成功，继续等待。")
+
+
+# 滚动三页
+for i in range(3):
+    browser.execute_script("window.scrollTo(0, document.body.scrollHeight")
+    time.sleep(3)
+
+# 输出和存储评论内容
+comment_content = browser.find_elements_by_class_name("comment-content")
+user_names = comment_content.find_elements_by_name("h4")
+comments = comment_content.find_elements_by_tag_name("h3")
+
+# 新建工作簿、指定第一行标题
+wb = openpyxl.Workbook()
+sheet = wb.active
+sheet['A1'] = '用户名'
+sheet['B1'] = '评论'
+
+# 在循环输出内容的同时，通过sheet.append()方法添加每行内容
+for i in range(len(comments)):
+    print("======")
+    print("用户：", user_names[i].text)
+    print("评论：", comments[i].text)
+    sheet.append({'A': user_names[i].text, 'B': comments[i].text})
+
+wb.save("./tmp/评论.xlsx")
+browser.quit()
+```
+
+<img src="C:\Users\65324\AppData\Roaming\Typora\typora-user-images\image-20231023000026404.png" alt="image-20231023000026404" style="zoom:50%;" />
+
+<u>（该代码无法完整运行***，验证失败）</u>
+
+
+
+### 总结
+
+<img src="C:\Users\65324\AppData\Roaming\Typora\typora-user-images\image-20231023000101971.png" alt="image-20231023000101971" style="zoom:67%;" />

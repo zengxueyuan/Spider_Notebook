@@ -477,4 +477,5 @@ for page in range(3):
 
 ### 总结
 
-![image-20230929002220636](C:\Users\65324\AppData\Roaming\Typora\typora-user-images\image-20230929002220636.png)
+<img src="C:\Users\65324\AppData\Roaming\Typora\typora-user-images\image-20230929002220636.png" alt="image-20230929002220636" style="zoom:67%;" />
+
